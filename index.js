@@ -32,13 +32,27 @@ const tuitionsCollections = db.collection('tuitions');
 const tutorCollections = db.collection('tutors')
 
 app.get('/tuitions', async (req, res)=>{
-    const cursor = tuitionsCollections.find().sort({date:-1}).limit(8)
-    const result = await cursor.toArray()
+const {limit} =  req.query
+
+if(!limit){
+    const result = await tuitionsCollections.find().toArray();
+    res.send(result)
+}
+
+    
+    const result = await tuitionsCollections.find().sort({date:-1}).limit(8).toArray()
     res.send(result)
 })
 
 app.get('/tutors', async(req, res)=>{
     
+    const {limit} = req.query;
+    if(!limit){
+        const result = await tutorCollections.find().toArray();
+        res.send(result)
+    }
+
+
     const cursor = tutorCollections.find().sort({rating:-1}).limit(8);
     const result = await cursor.toArray()
     res.send(result)
