@@ -35,8 +35,13 @@ app.get('/tuitions', async (req, res)=>{
 const {limit} =  req.query
 
 if(!limit){
-    const result = await tuitionsCollections.find().toArray();
-    res.send(result)
+    const page = parseInt(req.query.page) || 1
+    const limit = 6;
+    const skip = (page-1)*limit
+    const total = await tutorCollections.countDocuments();
+
+    const result = await tuitionsCollections.find().skip(skip).limit(limit).toArray();
+    res.send({tuitions:result, page, totalPages:Math.ceil(total/limit)})
 }
 
     
@@ -48,9 +53,17 @@ app.get('/tutors', async(req, res)=>{
     
     const {limit} = req.query;
     if(!limit){
-        const result = await tutorCollections.find().toArray();
-        res.send(result)
+
+            const page = parseInt(req.query.page) || 1;
+    const limit = 6;
+    const skip = (page-1) *limit
+    const total = await tutorCollections.countDocuments();
+    const result = await tutorCollections.find().skip(skip).limit(limit).toArray();
+    res.send({tutors:result, page, totalPages:Math.ceil(total/limit)})
+
     }
+
+
 
 
     const cursor = tutorCollections.find().sort({rating:-1}).limit(8);
