@@ -1,7 +1,8 @@
 const express = require('express');
 const app = express();
 const cors = require('cors')
-const { MongoClient, ServerApiVersion } = require('mongodb');
+require('dotenv').config()
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const port = process.env.PORT || 3000;
 
 app.use(cors())
@@ -10,8 +11,8 @@ app.use(express.json())
 // tuitions-db
 // TktvuxLD589PjxrZ
 
-// const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.sc7dsau.mongodb.net/?appName=Cluster0`;
-const uri = `mongodb+srv://tuitions-db:TktvuxLD589PjxrZ@cluster0.sc7dsau.mongodb.net/?appName=Cluster0`;
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.sc7dsau.mongodb.net/?appName=Cluster0`;
+// const uri = `mongodb+srv://tuitions-db:TktvuxLD589PjxrZ@cluster0.sc7dsau.mongodb.net/?appName=Cluster0`;
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -30,7 +31,31 @@ await client.connect();
 const db = client.db('tuitions-db'); 
 const tuitionsCollections = db.collection('tuitions'); 
 const tutorCollections = db.collection('tutors')
+const usersCollections = db.collection('users')
 
+// user related apis 
+app.post('/users',async(req, res)=>{
+    const user = req.body;
+    if(!user?.email || !user?.role){
+    res.status(401).send({message:'Email and role are requered'})
+    }
+    const email = user?.email;
+    const query = {email}
+    const existedUser = await usersCollections.findOne(query)
+    if(existedUser){
+        return res.send({message: 'user already exited'})
+    }
+    const result = await usersCollections.insertOne(user)
+    res.send(result)
+})
+
+app.get('/users', async(req, res)=>{
+    const result =await usersCollections.find().toArray();
+    res.send(result)
+})
+
+
+// tuition related apis 
 app.get('/tuitions', async (req, res)=>{
 const {limit} =  req.query
 
