@@ -96,7 +96,7 @@ app.get('/users/:email/role',verifyFirebaseToken,async (req, res)=>{
     const email = req.params.email;
     const query = {email}
 const user = await usersCollections.findOne(query)
-res.send({role:user?.role})
+res.send({name:user?.displayName,role:user?.role, email:user?.email, phoneNumber:user?.phoneNumber,photoURL:user?.photoURL})
 })
 
 // tuition related apis 
@@ -174,7 +174,7 @@ app.patch('/payment-success', verifyFirebaseToken,async (req, res)=>{
     const session = await stripe.checkout.sessions.retrieve(sessionId)
 const trackingId=session.metadata.trackingId
     const transactionId = session.payment_intent
-    
+    console.log('transactionId', transactionId)
     const query = {transactionId:transactionId}
     const existedPayment = await paymentCollections.findOne(query)
 
