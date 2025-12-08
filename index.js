@@ -19,7 +19,7 @@ admin.initializeApp({
 });
 
 
-app.use(cors())
+app.use(cors());
 app.use(express.json())
 
 const verifyFirebaseToken = async(req, res, next)=>{
@@ -96,8 +96,30 @@ app.get('/users/:email/role',verifyFirebaseToken,async (req, res)=>{
     const email = req.params.email;
     const query = {email}
 const user = await usersCollections.findOne(query)
-res.send({name:user?.displayName,role:user?.role, email:user?.email, phoneNumber:user?.phoneNumber,photoURL:user?.photoURL})
+res.send({name:user?.displayName,role:user?.role, email:user?.email, phoneNumber:user?.phoneNumber,})
 })
+
+
+app.patch('/users/update/:email', verifyFirebaseToken, async (req, res) => {
+  const email = req.params.email;
+  const updatedData = req.body;
+console.log('email r updateddaata', email, updatedData)
+ if (email) {
+    return res.status(403).send({ message: "Forbidden" });
+}
+
+  const query = { email:email };
+  const updateDoc = {
+    $set: updatedData
+  };
+
+  const result = await usersCollections.updateOne(query, updateDoc);
+
+  res.send(result);
+});
+
+
+
 
 // tuition related apis 
 app.post('/tuitions',async(req,res)=>{
@@ -112,7 +134,7 @@ app.post('/tuitions',async(req,res)=>{
 
 app.get('/tuitions', async (req, res)=>{
 const {limit,email} =  req.query
-console.log('hello', email)
+
 
 if(email){
     const result = await tuitionsCollections.find({email:email}).sort({createdAt:-1}).toArray();
