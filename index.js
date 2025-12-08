@@ -1,8 +1,10 @@
 const express = require('express');
+require('dotenv').config()
 const app = express();
 const admin = require("firebase-admin");
 const cors = require('cors')
-require('dotenv').config()
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
+
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const port = process.env.PORT || 3000;
 
@@ -35,6 +37,17 @@ req.decoded_email = decoded.email
 next()
 }
 
+const crypto = require("crypto");
+
+const generateTrackingId = () => {
+  const prefix = "TRK"; 
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, ""); 
+  const random = crypto.randomBytes(3).toString("hex").toUpperCase(); 
+  return `${prefix}-${date}-${random}`;
+};
+
+
+
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.sc7dsau.mongodb.net/?appName=Cluster0`;
 // const uri = `mongodb+srv://tuitions-db:TktvuxLD589PjxrZ@cluster0.sc7dsau.mongodb.net/?appName=Cluster0`;
 
@@ -56,6 +69,7 @@ const db = client.db('tuitions-db');
 const tuitionsCollections = db.collection('tuitions'); 
 const tutorCollections = db.collection('tutors')
 const usersCollections = db.collection('users')
+const paymentCollections = db.collection('payments')
 
 // user related apis 
 app.post('/users',async(req, res)=>{
@@ -88,6 +102,8 @@ res.send({role:user?.role})
 // tuition related apis 
 app.post('/tuitions',async(req,res)=>{
     const tuitions = req.body;
+    const trackingId = generateTrackingId()
+    tuitions.trackingId = trackingId;
     tuitions.status= 'pending'
     tuitions.createdAt= new Date();
     const result = await tuitionsCollections.insertOne(tuitions)
@@ -121,17 +137,96 @@ const result = await tuitionsCollections.find().sort({date:-1}).limit(8).toArray
     
 })
 
-// app.get('/tuitions', async(req, res)=>{
-//     const email = req.query.email;
-//     const query = {}
-//     if(email){
-//         query.email = email;
-       
-//     }
-//      const result = await tuitionsCollections.find(query).sort({createdAt:-1}).toArray();
-//      res.send(result)
-// })
 
+// payment related apis 
+app.post('/payment-checkout-session', async(req, res)=>{
+
+    const paymentInfo = req.body;
+    const trackingId = generateTrackingId();
+    const amount = parseInt(paymentInfo.budget) *100
+    console.log('paymentInfo', paymentInfo)
+     const session = await stripe.checkout.sessions.create({
+    line_items: [
+      {
+        
+        price_data:{
+            currency:'USD',
+            product_data:{name: 'Tuition Payment'},
+            unit_amount:amount
+        },
+        quantity: 1,
+      },
+    ],
+    mode: 'payment',
+    metadata:{tuitionId:paymentInfo.tuitionId, studentName:paymentInfo.studentName, trackingId: trackingId},
+    customer_email:paymentInfo.email,
+    success_url: `${process.env.MY_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${process.env.MY_DOMAIN}/dashboard/payment-cancelled`,
+  });
+res.send({url:session.url})
+
+
+})
+
+app.patch('/payment-success', verifyFirebaseToken,async (req, res)=>{
+    const sessionId  = req.query.session_id;
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId)
+const trackingId=session.metadata.trackingId
+    const transactionId = session.payment_intent
+    
+    const query = {transactionId:transactionId}
+    const existedPayment = await paymentCollections.findOne(query)
+
+    if(existedPayment){
+        return res.send({message: 'Payment Already Existed', transactionId, trackingId:existedPayment.trackingId})
+    }
+
+    if(session.payment_status === 'paid'){
+        const id = session.metadata.tuitionId
+        const query = {_id:new ObjectId(id)}
+        const update = {
+            $set:{
+                paymentStatus:'paid',
+
+            }
+        }
+        const tuitionResult = await tuitionsCollections.updateOne(query, update)
+ 
+   const payment = {
+   studentName: session.metadata.studentName,
+   email: session.customer_email,
+   amount: session.amount_total / 100,
+   currency: session.currency,
+   tuitionId: session.metadata.tuitionId,
+   transactionId: session.payment_intent,
+   trackingId: trackingId,
+   status: session.payment_status,
+   paidAt: new Date(),
+};
+
+const result = await paymentCollections.insertOne(payment)
+    res.send({success:true, modifiedTuition:tuitionResult,paymentInfo:result, transactionId:session.payment_intent,trackingId:trackingId})
+ 
+ 
+    }
+
+return res.send({success:false})
+
+})
+
+
+app.get('/payments',verifyFirebaseToken,async (req, res)=>{
+
+    console.log('decoded',req.decoded_email)
+    const email = req.decoded_email;
+    const query = {email:email}
+const result = await paymentCollections.find(query).sort({paidAt:-1}).toArray();
+res.send(result)
+
+})
+
+// tutor related apis 
 app.get('/tutors', async(req, res)=>{
     
     const {limit} = req.query;
