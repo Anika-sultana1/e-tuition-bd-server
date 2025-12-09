@@ -70,6 +70,7 @@ const tuitionsCollections = db.collection('tuitions');
 const tutorCollections = db.collection('tutors')
 const usersCollections = db.collection('users')
 const paymentCollections = db.collection('payments')
+const applicationCollections = db.collection('applications')
 
 // user related apis 
 app.post('/users',async(req, res)=>{
@@ -282,6 +283,33 @@ res.send(result)
 
 })
 
+// applications related apis 
+
+app.post('/applications', async (req, res) => {
+    
+        const appliedTuitions = req.body;
+        appliedTuitions.status = 'pending';
+        appliedTuitions.date = new Date();
+
+        
+        const existed = await applicationCollections.findOne({
+            email: appliedTuitions.email,
+            tuitionPostId: appliedTuitions.tuitionPostId
+        });
+
+        if (existed) {
+            return res.status(400).send({ message: 'You already applied for this tuition.' });
+        }
+
+        const result = await applicationCollections.insertOne(appliedTuitions);
+
+       
+res.send(result)
+
+
+});
+
+
 // tutor related apis 
 app.get('/tutors', async(req, res)=>{
     
@@ -305,6 +333,30 @@ app.get('/tutors', async(req, res)=>{
     res.send(result)
 })
 
+// app.post('/tutors',async(req, res)=>{
+//     const tutorInfo = req.body;
+   
+//     tutorInfo.status = 'pending';
+//     tutorInfo.createdAt = new Date();
+
+//     const exitedQuery = {email:tutorInfo?.email, tuitionId:tutorInfo.tuitionId}
+//     const existedTutors = await tutorCollections.findOne(exitedQuery)
+//     if(existedTutors){
+//         return res.send('Tutor Already Existed')
+//     }
+
+//     const result = await tutorCollections.insertOne(tutorInfo)
+
+//     if(result.insertedId){
+//         const id = tutorInfo.tuitionId
+//         const query = {_id:new ObjectId(id)}
+//         const result = await tuitionsCollections.deleteOne(query)
+//         return res.send(result)
+//     }
+
+
+//     res.send(result)
+// })
 
 await client.db('admin').command({ping:1})
 console.log("Pinged your deployment. You successfully connected to MongoDB!");
