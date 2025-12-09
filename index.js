@@ -74,6 +74,9 @@ const paymentCollections = db.collection('payments')
 // user related apis 
 app.post('/users',async(req, res)=>{
     const user = req.body;
+   if(!user.role){
+  user.role = "student";
+}
     if(!user?.email || !user?.role){
     res.status(401).send({message:'Email and role are requered'})
     }
@@ -100,11 +103,11 @@ res.send({name:user?.displayName,role:user?.role, email:user?.email, phoneNumber
 })
 
 
-app.patch('/users/update/:email', verifyFirebaseToken, async (req, res) => {
+app.patch('/users/update/:email', async (req, res) => {
   const email = req.params.email;
   const updatedData = req.body;
 console.log('email r updateddaata', email, updatedData)
- if (email) {
+ if (!email) {
     return res.status(403).send({ message: "Forbidden" });
 }
 
@@ -159,6 +162,37 @@ const result = await tuitionsCollections.find().sort({date:-1}).limit(8).toArray
     
 })
 
+app.get('/tuitions/:id', async(req, res)=>{
+    const id = req.params.id;
+    const query = {_id: new ObjectId(id)}
+    const result = await tuitionsCollections.findOne(query)
+    res.send(result)
+})
+
+
+app.patch('/tuitions/update/:id', async(req, res)=>{
+    const id = req.params.id;
+    const updatedTuitions = req.body;
+    const query = {_id:new ObjectId(id)}
+    const updatedDoc = {
+        $set:{
+            class:updatedTuitions.class,
+            subject:updatedTuitions.subject,
+            days:updatedTuitions.days,
+            time:updatedTuitions.time,
+            phoneNumber:updatedTuitions.phoneNumber,
+            updatedAt: new Date()
+        }
+    }
+    const result = await tuitionsCollections.updateOne(query, updatedDoc)
+res.send(result)
+})
+app.delete('/tuitions/:id', async(req, res)=>{
+    const id = req.params.id;
+    const query = {_id:new ObjectId(id)}
+    const result = await tuitionsCollections.deleteOne(query);
+    res.send(result)
+})
 
 // payment related apis 
 app.post('/payment-checkout-session', async(req, res)=>{
