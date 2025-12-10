@@ -30,12 +30,32 @@ const verifyFirebaseToken = async(req, res, next)=>{
     }
 
     const token = authorization.split(' ')[1]
+    console.log('token is', token)
 const decoded = await admin.auth().verifyIdToken(token)
 req.decoded_email = decoded.email
-
+console.log('decoded email holo',req.decoded_email)
 
 next()
 }
+const verifyJWTToken = async (req, res, next) => {
+    const authorization = req.headers.authorization;
+    if (!authorization) {
+        return res.status(401).send({ message: 'Unauthorized access' });
+    }
+
+    const token = authorization.split(' ')[1];
+    console.log('token is', token);
+
+    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+        if (err) {
+            return res.status(401).send({ message: 'Unauthorized access' });
+        }
+
+        console.log('after decoded', decoded);
+        req.decoded_email = decoded.email;
+        next();
+    });
+};
 
 const crypto = require("crypto");
 
@@ -96,7 +116,7 @@ app.get('/users', verifyFirebaseToken, async(req, res)=>{
     res.send(result)
 })
 
-app.get('/users/:email/role',verifyFirebaseToken,async (req, res)=>{
+app.get('/users/:email',verifyFirebaseToken,async (req, res)=>{
     const email = req.params.email;
     const query = {email}
 const user = await usersCollections.findOne(query)
@@ -177,10 +197,20 @@ const result = await tuitionsCollections.find().sort({date:-1}).limit(8).toArray
 
 app.get('/tuitions/:id', async(req, res)=>{
     const id = req.params.id;
+console.log('id of tuition', id)
     const query = {_id: new ObjectId(id)}
     const result = await tuitionsCollections.findOne(query)
     res.send(result)
 })
+
+
+app.get('/approvedTuitions/approved',verifyFirebaseToken, async (req, res) => {
+
+  const query = { paymentStatus: 'paid', tutorEmail: req.decoded_email }
+
+        const approvedTuitions = await tuitionsCollections.find(query).sort({ createdAt: -1 }).toArray();
+        res.send(Array.isArray(approvedTuitions) ? approvedTuitions : []);
+});
 
 
 app.patch('/tuitions/update/:id', async(req, res)=>{
@@ -227,7 +257,12 @@ app.post('/payment-checkout-session', async(req, res)=>{
       },
     ],
     mode: 'payment',
-    metadata:{tuitionId:paymentInfo.tuitionId, studentName:paymentInfo.studentName, trackingId: trackingId},
+    metadata:{
+        tuitionId:paymentInfo.tuitionId,
+         studentName:paymentInfo.studentName, 
+         trackingId: trackingId,
+        applicationId: paymentInfo.applicationId,
+    },
     customer_email:paymentInfo.email,
     success_url: `${process.env.MY_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${process.env.MY_DOMAIN}/dashboard/payment-cancelled`,
@@ -241,6 +276,7 @@ app.patch('/payment-success', verifyFirebaseToken,async (req, res)=>{
     const sessionId  = req.query.session_id;
 
     const session = await stripe.checkout.sessions.retrieve(sessionId)
+    console.log('Stripe metadata tuitionId:', session.metadata.tuitionId)
 const trackingId=session.metadata.trackingId
     const transactionId = session.payment_intent
     console.log('transactionId', transactionId)
@@ -252,15 +288,18 @@ const trackingId=session.metadata.trackingId
     }
 
     if(session.payment_status === 'paid'){
-        const id = session.metadata.tuitionId
-        const query = {_id:new ObjectId(id)}
+        const tuitionId = session.metadata.tuitionId
+        const applicationId = session.metadata.applicationId
+        console.log('applicationId', applicationId)
+        const query = {id:tuitionId}
+
         const update = {
             $set:{
                 paymentStatus:'paid',
 
             }
         }
-        const tuitionResult = await tuitionsCollections.updateOne(query, update)
+        const tuitionUpdateResult = await tuitionsCollections.updateOne(query, update)
  
    const payment = {
    studentName: session.metadata.studentName,
@@ -274,15 +313,91 @@ const trackingId=session.metadata.trackingId
    paidAt: new Date(),
 };
 
-const result = await paymentCollections.insertOne(payment)
-    res.send({success:true, modifiedTuition:tuitionResult,paymentInfo:result, transactionId:session.payment_intent,trackingId:trackingId})
+
+const paymentResult = await paymentCollections.insertOne(payment)
  
+let applicationResult ;
+if(applicationId){
+    const applicationQuery = {_id: new ObjectId(applicationId)}
+const updateApplication = {
+    $set:{
+        status:'approved'
+    }
+}
+    applicationResult = await applicationCollections.updateOne(applicationQuery, updateApplication)
+}
+console.log('Tuition updated:', tuitionUpdateResult);
+console.log('Payment inserted:', paymentResult);
+console.log('Application approved:', applicationResult);
+
+
+ res.send({
+    success:true, 
+    tuitionUpdateResult,
+    paymentResult ,
+     applicationResult ,
+     transactionId:session.payment_intent,trackingId:trackingId})
+ 
+//  if(session.payment_status === 'paid'){
+
+//     const tuitionId = session.metadata.tuitionId
+// const approvedTutorQuery = {
+//     tuitionPostId: tuitionId,
+//     email:session.customer_email,
+// }
+
+// const updateApprovedTutor = {
+//     $set:{
+//         status:'approved'
+//     }
+// }
+// const approvedTutorResult = await applicationCollections.updateOne(approvedTutorQuery,updateApprovedTutor)
+// return res.send(approvedTutorResult)
+//  }
+
  
     }
 
 return res.send({success:false})
 
 })
+
+// app.patch('/applications/approve', async (req, res) => {
+//     try {
+//         const sessionId = req.query.session_id;
+//         const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+   
+//         const applicationId = session.metadata.applicationId;
+
+//         if (!applicationId) {
+//             return res.status(400).send({ message: "Application ID missing in metadata" });
+//         }
+
+//         const query = { _id: new ObjectId(applicationId) };
+//         const update = { $set: { status: 'approved' } };
+
+//         const result = await applicationCollections.updateOne(query, update);
+
+//         return res.send({ success: true, result });
+
+//     } catch (error) {
+//         console.error(error);
+//         res.status(500).send({ message: "Server error" });
+//     }
+// });
+
+
+app.patch('/applications/reject/:id', verifyFirebaseToken, async (req, res) => {
+  const id = req.params.id;
+
+  const result = await applicationCollections.updateOne(
+    { _id: new ObjectId(id) },
+    { $set: { status: "Rejected" } }
+  );
+
+  res.send({ success: true, message: "Application rejected", result });
+});
 
 
 app.get('/payments',verifyFirebaseToken,async (req, res)=>{
@@ -325,6 +440,14 @@ app.get('/applications',async(req, res)=>{
     const result = await applicationCollections.find().sort({data:-1}).toArray();
     res.send(result)
 })
+
+app.delete('/applications/:id', async(req, res)=>{
+    const id = req.params.id;
+    const query = {_id: new ObjectId(id)}
+    const result = await applicationCollections.deleteOne(query)
+    res.send(result)
+})
+
 
 // tutor related apis 
 app.get('/tutors', async(req, res)=>{
