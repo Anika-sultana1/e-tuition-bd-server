@@ -130,6 +130,18 @@ app.post('/tuitions',async(req,res)=>{
     const tuitions = req.body;
     const trackingId = generateTrackingId()
     tuitions.trackingId = trackingId;
+    tuitions.paymentStatus='Unpaid'
+    // if(tuitions.paymentStatus === 'paid'){
+    //     const id = req.params.id;
+    //     const query = {_id:new ObjectId(id)}
+    //     const update = {
+    //         $set:{
+    //             payment_status:'paid'
+    //         }
+    //     }
+    //     const result = await tuitionsCollections.updateOne(query, update)
+    //     return res.send()
+    // }
     tuitions.status= 'pending'
     tuitions.createdAt= new Date();
     const result = await tuitionsCollections.insertOne(tuitions)
@@ -309,6 +321,10 @@ res.send(result)
 
 });
 
+app.get('/applications',async(req, res)=>{
+    const result = await applicationCollections.find().sort({data:-1}).toArray();
+    res.send(result)
+})
 
 // tutor related apis 
 app.get('/tutors', async(req, res)=>{
