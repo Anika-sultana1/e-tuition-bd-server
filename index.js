@@ -176,6 +176,12 @@ app.post('/tuitions',async(req,res)=>{
     res.send(result)
 })
 
+// app.get('/tuitions/admins',async(req, res)=>{
+//     const cursor = tuitionsCollections.find().sort({createdAt:-1});
+//     const result = await cursor.toArray();
+//     res.send(result)
+// })
+
 app.get('/tuitions', async (req, res)=>{
 const {limit,email} =  req.query
 
@@ -210,6 +216,37 @@ console.log('id of tuition', id)
     const result = await tuitionsCollections.findOne(query)
     res.send(result)
 })
+
+app.patch('/tuitions/approve/:id', verifyFirebaseToken, async (req, res) => {
+    const id = req.params.id;
+
+    const query = { _id: new ObjectId(id) };
+    const updateDoc = {
+        $set: {
+            status: "approved",
+            updatedAt: new Date()
+        }
+    };
+
+    const result = await tuitionsCollections.updateOne(query, updateDoc);
+    res.send(result);
+});
+
+app.patch('/tuitions/reject/:id', verifyFirebaseToken, async (req, res) => {
+    const id = req.params.id;
+
+    const query = { _id: new ObjectId(id) };
+    const updateDoc = {
+        $set: {
+            status: "rejected",
+            updatedAt: new Date()
+        }
+    };
+
+    const result = await tuitionsCollections.updateOne(query, updateDoc);
+    res.send({ success: true, message: "Tuition Rejected", result });
+});
+
 
 
 app.get('/approvedTuitions/approved', async (req, res) => {
@@ -411,6 +448,22 @@ res.send(result)
 
 app.get('/applications',async(req, res)=>{
     const result = await applicationCollections.find().sort({data:-1}).toArray();
+    res.send(result)
+})
+
+app.patch('/applications/update/:id', async(req, res)=>{
+    const id = req.params.id;
+    const updatedData = req.body;
+    const query = {_id: new ObjectId(id)}
+    const updatedDoc = {
+        $set: {
+            phoneNumber: updatedData.phoneNumber,
+            tuitionPostDays: updatedData.tuitionPostDays,
+            tuitionPostTime: updatedData.tuitionPostTime,
+            updatedAt: new Date()
+        }
+    }
+    const result = await applicationCollections.updateOne(query, updatedDoc)
     res.send(result)
 })
 
