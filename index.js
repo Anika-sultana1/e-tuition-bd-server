@@ -116,7 +116,7 @@ app.get('/users', verifyFirebaseToken, async(req, res)=>{
     res.send(result)
 })
 
-app.get('/users/:email',verifyFirebaseToken,async (req, res)=>{
+app.get('/users/:email/role',verifyFirebaseToken,async (req, res)=>{
     const email = req.params.email;
     const query = {email}
 const user = await usersCollections.findOne(query)
@@ -142,6 +142,14 @@ console.log('email r updateddaata', email, updatedData)
   res.send(result);
 });
 
+app.delete('/users/delete/:email', verifyFirebaseToken,async(req, res)=>{
+
+    const email = req.params.email;
+    const query = {email}
+    const result = await usersCollections.deleteOne(query)
+    res.send(result)
+
+})
 
 
 
@@ -204,7 +212,7 @@ console.log('id of tuition', id)
 })
 
 
-app.get('/approvedTuitions/approved',verifyFirebaseToken, async (req, res) => {
+app.get('/approvedTuitions/approved', async (req, res) => {
 
   const query = { paymentStatus: 'paid', tutorEmail: req.decoded_email }
 
@@ -243,6 +251,7 @@ app.post('/payment-checkout-session', async(req, res)=>{
     const paymentInfo = req.body;
     const trackingId = generateTrackingId();
     const amount = parseInt(paymentInfo.budget) *100
+    console.log('amount is', amount, paymentInfo.budget)
     console.log('paymentInfo', paymentInfo)
      const session = await stripe.checkout.sessions.create({
     line_items: [
@@ -362,42 +371,6 @@ return res.send({success:false})
 
 })
 
-// app.patch('/applications/approve', async (req, res) => {
-//     try {
-//         const sessionId = req.query.session_id;
-//         const session = await stripe.checkout.sessions.retrieve(sessionId);
-
-   
-//         const applicationId = session.metadata.applicationId;
-
-//         if (!applicationId) {
-//             return res.status(400).send({ message: "Application ID missing in metadata" });
-//         }
-
-//         const query = { _id: new ObjectId(applicationId) };
-//         const update = { $set: { status: 'approved' } };
-
-//         const result = await applicationCollections.updateOne(query, update);
-
-//         return res.send({ success: true, result });
-
-//     } catch (error) {
-//         console.error(error);
-//         res.status(500).send({ message: "Server error" });
-//     }
-// });
-
-
-app.patch('/applications/reject/:id', verifyFirebaseToken, async (req, res) => {
-  const id = req.params.id;
-
-  const result = await applicationCollections.updateOne(
-    { _id: new ObjectId(id) },
-    { $set: { status: "Rejected" } }
-  );
-
-  res.send({ success: true, message: "Application rejected", result });
-});
 
 
 app.get('/payments',verifyFirebaseToken,async (req, res)=>{
@@ -441,12 +414,47 @@ app.get('/applications',async(req, res)=>{
     res.send(result)
 })
 
+app.patch('/applications/reject/:id', verifyFirebaseToken, async (req, res) => {
+  const id = req.params.id;
+
+  const query = {_id: new ObjectId(id)}
+  const updateStatus = {
+    $set:{
+        status:'rejected'
+    }
+  }
+  const result = await applicationCollections.updateOne(
+    query,
+    updateStatus
+  );
+
+  res.send({ success: true, message: "Application rejected", result });
+});
+
+
 app.delete('/applications/:id', async(req, res)=>{
     const id = req.params.id;
     const query = {_id: new ObjectId(id)}
-    const result = await applicationCollections.deleteOne(query)
+    const updateResult = {
+        $set:{
+            status:'rejected'
+        }
+    }
+    const result = await applicationCollections.deleteOne(query, updateResult)
     res.send(result)
 })
+
+// revenue API
+app.get('/revenue', verifyFirebaseToken, async (req, res) => {
+  
+        const tutorEmail = req.decoded_email;
+        const query = {email:tutorEmail}
+        const payments = await paymentCollections.find(query).sort({ paidAt: -1 }).toArray();
+
+        const totalEarnings = payments.reduce((sum, p) => sum + p.amount, 0);
+        res.send({ payments, totalEarnings });
+  
+});
 
 
 // tutor related apis 
