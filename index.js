@@ -176,14 +176,8 @@ app.post('/tuitions',async(req,res)=>{
     res.send(result)
 })
 
-// app.get('/tuitions/admins',async(req, res)=>{
-//     const cursor = tuitionsCollections.find().sort({createdAt:-1});
-//     const result = await cursor.toArray();
-//     res.send(result)
-// })
-
 app.get('/tuitions', async (req, res)=>{
-const {limit,email} =  req.query
+const {limit,email, subject, location} =  req.query
 
 
 if(email){
@@ -192,22 +186,37 @@ if(email){
     return  res.send(result)
 }
 
-if(!limit){
-    const page = parseInt(req.query.page) || 1
-    const limit = 6;
-    const skip = (page-1)*limit
-    const total = await tuitionsCollections.countDocuments();
 
-    const result = await tuitionsCollections.find().skip(skip).limit(limit).toArray();
-    return  res.send({tuitions:result, page, totalPages:Math.ceil(total/limit)})
-}
 
     if(!email && limit){
 const result = await tuitionsCollections.find().sort({date:-1}).limit(8).toArray()
      res.send(result)
     }
+
+
+    if(!limit){
+    const page = parseInt(req.query.page) || 1
+    
+    const limit = 6;
+    const skip = (page-1)*limit
+    const query = {}
+    if(subject){
+        query.subject={$regex:subject, $options:'i'}
+    }
+    if(location){
+        query.location={$regex:location,$options:'i'}
+    }
+    const total = await tuitionsCollections.countDocuments(query);
+
+    const result = await tuitionsCollections.find(query).skip(skip).limit(limit).toArray();
+    return  res.send({tuitions:result, page, totalPages:Math.ceil(total/limit)})
+}
+
+
     
 })
+
+
 
 app.get('/tuitions/:id', async(req, res)=>{
     const id = req.params.id;
@@ -246,8 +255,6 @@ app.patch('/tuitions/reject/:id', verifyFirebaseToken, async (req, res) => {
     const result = await tuitionsCollections.updateOne(query, updateDoc);
     res.send({ success: true, message: "Tuition Rejected", result });
 });
-
-
 
 app.get('/approvedTuitions/approved', async (req, res) => {
 
@@ -509,6 +516,133 @@ app.get('/revenue', verifyFirebaseToken, async (req, res) => {
   
 });
 
+// reviow
+app.post("/tuition/review/:id", async (req, res) => {
+  const id = req.params.id;
+  const checks = req.body;
+
+  const reviewData = {
+    ...checks,
+    reviewedAt: new Date(),
+  };
+const reviewQuery = { _id: new ObjectId(id) }
+const updateReview = {
+    $set:{
+        reviewChecklist:reviewData
+    }
+}
+  const result = await tuitionsCollections.updateOne(
+    reviewQuery,
+    updateReview
+  );
+
+  res.send({ success: true, result });
+});
+
+// admin summery /
+
+app.get('/admin/report-summary', verifyFirebaseToken, async (req, res) => {
+    const pipeline = [
+        {
+            $group: {
+                _id: null,
+                totalEarnings: { $sum: "$amount" },
+                totalTransactions: { $sum: 1 }
+            }
+        }
+    ]
+    const total = await paymentCollections.aggregate(pipeline).toArray();
+
+    const summary = total[0] || { totalEarnings: 0, totalTransactions: 0 };
+
+    res.send(summary);
+});
+
+app.get('/admin/transactions', verifyFirebaseToken, async (req, res) => {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    const totalTransactions = await paymentCollections.countDocuments();
+    const transactions = await paymentCollections.find()
+        .sort({ paidAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .toArray();
+
+    res.send({
+        transactions,
+        page,
+        totalPages: Math.ceil(totalTransactions / limit),
+    });
+});
+
+app.get('/admin/weekly-revenue',verifyFirebaseToken, async (req, res)=>{
+    const weeks = req.query.weeks;
+    const pipeline = [
+        {
+            $group:{
+                _id:{
+                    year:{$year: '$paidAt'},
+                    week:{$week:'$paidAt'}
+                },
+                total:{$sum:'$amount'}
+            }
+        },
+            {
+                $sort:{'_id.year':1, '_id.week':1}
+            }
+    ]
+
+    const result = await paymentCollections.aggregate(pipeline).toArray();
+res.send(result)
+})
+
+// Admin dashboard summary
+app.get('/admin/dashboard-stats', verifyFirebaseToken, async (req, res) => {
+ 
+       
+        const totalUsers = await usersCollections.countDocuments();
+        const activeUsers = await usersCollections.countDocuments({ role: { $in: ['student','tutor','admin'] } }); 
+      
+        const totalTuitions = await tuitionsCollections.countDocuments();
+        const pendingTuitions = await tuitionsCollections.countDocuments({ status: 'pending' });
+        const approvedTuitions = await tuitionsCollections.countDocuments({ status: 'approved' });
+
+      
+        const payments = await paymentCollections.find().toArray();
+        const totalEarnings = payments.reduce((sum, p) => sum + p.amount, 0);
+
+        res.send({
+            totalUsers,
+            activeUsers,
+            totalTuitions,
+            pendingTuitions,
+            approvedTuitions,
+            totalEarnings
+        });
+
+
+});
+
+
+app.get('/admin/monthly-revenue', verifyFirebaseToken, async (req, res) => {
+    const months = parseInt(req.query.months) || 12;
+
+    const pipeline = [
+        {
+            $group: {
+                _id: { year: { $year: "$paidAt" }, month: { $month: "$paidAt" } },
+                total: { $sum: "$amount" }
+            }
+        },
+        { $sort: { "_id.year": 1, "_id.month": 1 } }
+    ];
+
+    const result = await paymentCollections.aggregate(pipeline).toArray();
+    res.send(result);
+});
+
 
 // tutor related apis 
 app.get('/tutors', async(req, res)=>{
@@ -533,30 +667,6 @@ app.get('/tutors', async(req, res)=>{
     res.send(result)
 })
 
-// app.post('/tutors',async(req, res)=>{
-//     const tutorInfo = req.body;
-   
-//     tutorInfo.status = 'pending';
-//     tutorInfo.createdAt = new Date();
-
-//     const exitedQuery = {email:tutorInfo?.email, tuitionId:tutorInfo.tuitionId}
-//     const existedTutors = await tutorCollections.findOne(exitedQuery)
-//     if(existedTutors){
-//         return res.send('Tutor Already Existed')
-//     }
-
-//     const result = await tutorCollections.insertOne(tutorInfo)
-
-//     if(result.insertedId){
-//         const id = tutorInfo.tuitionId
-//         const query = {_id:new ObjectId(id)}
-//         const result = await tuitionsCollections.deleteOne(query)
-//         return res.send(result)
-//     }
-
-
-//     res.send(result)
-// })
 
 await client.db('admin').command({ping:1})
 console.log("Pinged your deployment. You successfully connected to MongoDB!");
