@@ -69,7 +69,7 @@ const generateTrackingId = () => {
 
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.sc7dsau.mongodb.net/?appName=Cluster0`;
-// const uri = `mongodb+srv://tuitions-db:TktvuxLD589PjxrZ@cluster0.sc7dsau.mongodb.net/?appName=Cluster0`;
+
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -91,6 +91,21 @@ const tutorCollections = db.collection('tutors')
 const usersCollections = db.collection('users')
 const paymentCollections = db.collection('payments')
 const applicationCollections = db.collection('applications')
+const trackingsCollections = db.collection('trackings')
+
+const logTrackings = async(trackingId, 
+        status,)=>{
+    const log = {
+        trackingId, 
+        status,
+        details:status.split('_'),
+        createdAt: new Date()
+
+    }
+    const result = await trackingsCollections.insertOne(log)
+    return result;
+}
+
 
 // user related apis 
 app.post('/users',async(req, res)=>{
@@ -159,20 +174,10 @@ app.post('/tuitions',async(req,res)=>{
     const trackingId = generateTrackingId()
     tuitions.trackingId = trackingId;
     tuitions.paymentStatus='Unpaid'
-    // if(tuitions.paymentStatus === 'paid'){
-    //     const id = req.params.id;
-    //     const query = {_id:new ObjectId(id)}
-    //     const update = {
-    //         $set:{
-    //             payment_status:'paid'
-    //         }
-    //     }
-    //     const result = await tuitionsCollections.updateOne(query, update)
-    //     return res.send()
-    // }
     tuitions.status= 'pending'
     tuitions.createdAt= new Date();
     const result = await tuitionsCollections.insertOne(tuitions)
+    logTrackings(trackingId, 'tuition_created')
     res.send(result)
 })
 
@@ -228,31 +233,37 @@ console.log('id of tuition', id)
 
 app.patch('/tuitions/approve/:id', verifyFirebaseToken, async (req, res) => {
     const id = req.params.id;
-
+const {trackingId} = req.body
     const query = { _id: new ObjectId(id) };
     const updateDoc = {
         $set: {
             status: "approved",
+            trackingId,
             updatedAt: new Date()
         }
     };
 
     const result = await tuitionsCollections.updateOne(query, updateDoc);
+   
+    logTrackings(trackingId,'tuition_approved')
     res.send(result);
 });
 
 app.patch('/tuitions/reject/:id', verifyFirebaseToken, async (req, res) => {
     const id = req.params.id;
-
+const {trackingId} = req.body
     const query = { _id: new ObjectId(id) };
     const updateDoc = {
         $set: {
             status: "rejected",
+            trackingId,
             updatedAt: new Date()
         }
     };
 
     const result = await tuitionsCollections.updateOne(query, updateDoc);
+   logTrackings(trackingId, 'tuition_rejected')
+   
     res.send({ success: true, message: "Tuition Rejected", result });
 });
 
@@ -344,7 +355,7 @@ const trackingId=session.metadata.trackingId
         const tuitionId = session.metadata.tuitionId
         const applicationId = session.metadata.applicationId
         console.log('applicationId', applicationId)
-        const query = {id:tuitionId}
+        const query = {id:new ObjectId (tuitionId)}
 
         const update = {
             $set:{
@@ -369,6 +380,7 @@ const trackingId=session.metadata.trackingId
 
 const paymentResult = await paymentCollections.insertOne(payment)
  
+
 let applicationResult ;
 if(applicationId){
     const applicationQuery = {_id: new ObjectId(applicationId)}
@@ -379,9 +391,8 @@ const updateApplication = {
 }
     applicationResult = await applicationCollections.updateOne(applicationQuery, updateApplication)
 }
-console.log('Tuition updated:', tuitionUpdateResult);
-console.log('Payment inserted:', paymentResult);
-console.log('Application approved:', applicationResult);
+
+logTrackings(trackingId, 'payment_success')
 
 
  res.send({
@@ -495,12 +506,8 @@ app.patch('/applications/reject/:id', verifyFirebaseToken, async (req, res) => {
 app.delete('/applications/:id', async(req, res)=>{
     const id = req.params.id;
     const query = {_id: new ObjectId(id)}
-    const updateResult = {
-        $set:{
-            status:'rejected'
-        }
-    }
-    const result = await applicationCollections.deleteOne(query, updateResult)
+  
+    const result = await applicationCollections.deleteOne(query)
     res.send(result)
 })
 
