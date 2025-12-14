@@ -93,12 +93,13 @@ const paymentCollections = db.collection('payments')
 const applicationCollections = db.collection('applications')
 const trackingsCollections = db.collection('trackings')
 
-const logTrackings = async(trackingId, 
+const logTrackings = async(trackingId,userEmail, 
         status,)=>{
     const log = {
         trackingId, 
+        userEmail,
         status,
-        details:status.split('_'),
+        details:status.split('_').join(' '),
         createdAt: new Date()
 
     }
@@ -106,6 +107,26 @@ const logTrackings = async(trackingId,
     return result;
 }
 
+// tracking related apis 
+app.get('/trackings/student', verifyFirebaseToken, async(req, res)=>{
+    const email = req.decoded_email;
+    const query = {userEmail:email}
+    const result = await trackingsCollections.find(query).sort({createdAt:-1}).toArray();
+    res.send(result)
+})
+app.get('/trackings/tutor', verifyFirebaseToken, async(req, res)=>{
+    const email = req.decoded_email;
+    const query = {tutorEmail:email}
+    const tuitions = await tuitionsCollections.find(query).toArray();
+    const trackingIds = tuitions.map(tuition => tuition.trackingId);
+    const trackingIdQuery = {trackingId:{
+        $in: trackingIds
+    }}
+const result = await trackingsCollections.find(trackingIdQuery).sort({createdAt:-1}).toArray();
+
+res.send(result)
+
+})
 
 // user related apis 
 app.post('/users',async(req, res)=>{
@@ -171,13 +192,14 @@ app.delete('/users/delete/:email', verifyFirebaseToken,async(req, res)=>{
 // tuition related apis 
 app.post('/tuitions',async(req,res)=>{
     const tuitions = req.body;
+    const userEmail = tuitions.email
     const trackingId = generateTrackingId()
     tuitions.trackingId = trackingId;
     tuitions.paymentStatus='Unpaid'
     tuitions.status= 'pending'
     tuitions.createdAt= new Date();
     const result = await tuitionsCollections.insertOne(tuitions)
-    logTrackings(trackingId, 'tuition_created')
+    logTrackings(trackingId,userEmail, 'tuition_created')
     res.send(result)
 })
 
@@ -233,36 +255,39 @@ console.log('id of tuition', id)
 
 app.patch('/tuitions/approve/:id', verifyFirebaseToken, async (req, res) => {
     const id = req.params.id;
-const {trackingId} = req.body
+const {trackingId, email} = req.body
+const userEmail = email;
     const query = { _id: new ObjectId(id) };
     const updateDoc = {
         $set: {
             status: "approved",
             trackingId,
+            email:email,
             updatedAt: new Date()
         }
     };
 
     const result = await tuitionsCollections.updateOne(query, updateDoc);
    
-    logTrackings(trackingId,'tuition_approved')
+    logTrackings(trackingId,userEmail,'tuition_approved')
     res.send(result);
 });
 
 app.patch('/tuitions/reject/:id', verifyFirebaseToken, async (req, res) => {
     const id = req.params.id;
-const {trackingId} = req.body
+const {trackingId, email} = req.body
     const query = { _id: new ObjectId(id) };
     const updateDoc = {
         $set: {
             status: "rejected",
             trackingId,
+            userEmail:email,
             updatedAt: new Date()
         }
     };
 
     const result = await tuitionsCollections.updateOne(query, updateDoc);
-   logTrackings(trackingId, 'tuition_rejected')
+   logTrackings(trackingId,userEmail, 'tuition_rejected')
    
     res.send({ success: true, message: "Tuition Rejected", result });
 });
@@ -355,7 +380,7 @@ const trackingId=session.metadata.trackingId
         const tuitionId = session.metadata.tuitionId
         const applicationId = session.metadata.applicationId
         console.log('applicationId', applicationId)
-        const query = {id:new ObjectId (tuitionId)}
+        const query = {id:new ObjectId(tuitionId)}
 
         const update = {
             $set:{
@@ -392,7 +417,8 @@ const updateApplication = {
     applicationResult = await applicationCollections.updateOne(applicationQuery, updateApplication)
 }
 
-logTrackings(trackingId, 'payment_success')
+const userEmail = session.customer_email
+logTrackings(trackingId,userEmail, 'payment_success')
 
 
  res.send({
@@ -402,22 +428,6 @@ logTrackings(trackingId, 'payment_success')
      applicationResult ,
      transactionId:session.payment_intent,trackingId:trackingId})
  
-//  if(session.payment_status === 'paid'){
-
-//     const tuitionId = session.metadata.tuitionId
-// const approvedTutorQuery = {
-//     tuitionPostId: tuitionId,
-//     email:session.customer_email,
-// }
-
-// const updateApprovedTutor = {
-//     $set:{
-//         status:'approved'
-//     }
-// }
-// const approvedTutorResult = await applicationCollections.updateOne(approvedTutorQuery,updateApprovedTutor)
-// return res.send(approvedTutorResult)
-//  }
 
  
     }
@@ -425,7 +435,6 @@ logTrackings(trackingId, 'payment_success')
 return res.send({success:false})
 
 })
-
 
 
 app.get('/payments',verifyFirebaseToken,async (req, res)=>{
@@ -449,6 +458,7 @@ app.post('/applications', async (req, res) => {
         
         const existed = await applicationCollections.findOne({
             email: appliedTuitions.email,
+            trackingId:appliedTuitions.trackingId,
             tuitionPostId: appliedTuitions.tuitionPostId
         });
 
@@ -457,7 +467,9 @@ app.post('/applications', async (req, res) => {
         }
 
         const result = await applicationCollections.insertOne(appliedTuitions);
-
+const trackingId  = appliedTuitions.trackingId
+        const userEmail = appliedTuitions.email
+        logTrackings(trackingId, userEmail,'application_submitted')
        
 res.send(result)
 
@@ -546,7 +558,7 @@ const updateReview = {
   res.send({ success: true, result });
 });
 
-// admin summery /
+// admin summery 
 
 app.get('/admin/report-summary', verifyFirebaseToken, async (req, res) => {
     const pipeline = [
