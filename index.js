@@ -22,21 +22,27 @@ admin.initializeApp({
 app.use(cors());
 app.use(express.json())
 
-const verifyFirebaseToken = async(req, res, next)=>{
-
+const verifyFirebaseToken = async (req, res, next) => {
     const authorization = req.headers.authorization;
-    if(!authorization){
-        return res.status(401).send({message:'Unauthorized access'})
+    console.log('authorization is',authorization)
+    if (!authorization) {
+        return res.status(401).send({ message: 'Unauthorized access 1' });
     }
 
-    const token = authorization.split(' ')[1]
-    console.log('token is', token)
-const decoded = await admin.auth().verifyIdToken(token)
-req.decoded_email = decoded.email
-console.log('decoded email holo',req.decoded_email)
+    const token = authorization.split(' ')[1];
+    console.log('token is', token);
 
-next()
-}
+    try {
+        const decoded = await admin.auth().verifyIdToken(token);
+        req.decoded_email = decoded.email;
+        console.log('decoded email holo', req.decoded_email);
+        next();
+    } catch (error) {
+        console.error('Error verifying Firebase token:', error);
+        return res.status(401).send({ message: 'Unauthorized access 2' });
+    }
+};
+
 const verifyJWTToken = async (req, res, next) => {
     const authorization = req.headers.authorization;
     if (!authorization) {
@@ -109,13 +115,13 @@ const logTrackings = async(trackingId,userEmail,
 
 // tracking related apis 
 app.get('/trackings/student', verifyFirebaseToken, async(req, res)=>{
-    const email = req.decoded_email;
+    const email = req.query.email;
     const query = {userEmail:email}
     const result = await trackingsCollections.find(query).sort({createdAt:-1}).toArray();
     res.send(result)
 })
 app.get('/trackings/tutor', verifyFirebaseToken, async(req, res)=>{
-    const email = req.decoded_email;
+    const email = req.params.email
     const query = {tutorEmail:email}
     const tuitions = await tuitionsCollections.find(query).toArray();
     const trackingIds = tuitions.map(tuition => tuition.trackingId);
@@ -192,7 +198,7 @@ app.delete('/users/delete/:email', verifyFirebaseToken,async(req, res)=>{
 // tuition related apis 
 app.post('/tuitions',async(req,res)=>{
     const tuitions = req.body;
-    const userEmail = tuitions.email
+     const userEmail = req.decoded_email;
     const trackingId = generateTrackingId()
     tuitions.trackingId = trackingId;
     tuitions.paymentStatus='Unpaid'
@@ -235,7 +241,7 @@ const result = await tuitionsCollections.find().sort({date:-1}).limit(8).toArray
     }
     const total = await tuitionsCollections.countDocuments(query);
 
-    const result = await tuitionsCollections.find(query).skip(skip).limit(limit).toArray();
+    const result = await tuitionsCollections.find(query).sort({createdAt:-1}).skip(skip).limit(limit).toArray();
     return  res.send({tuitions:result, page, totalPages:Math.ceil(total/limit)})
 }
 
@@ -292,12 +298,13 @@ const {trackingId, email} = req.body
     res.send({ success: true, message: "Tuition Rejected", result });
 });
 
-app.get('/approvedTuitions/approved', async (req, res) => {
+app.get('/approvedApplications/approved',verifyFirebaseToken, async (req, res) => {
 
-  const query = { paymentStatus: 'paid', tutorEmail: req.decoded_email }
+  const query = { status: 'approved',email:req.decoded_email}
 
-        const approvedTuitions = await tuitionsCollections.find(query).sort({ createdAt: -1 }).toArray();
-        res.send(Array.isArray(approvedTuitions) ? approvedTuitions : []);
+        const approvedApplications = await applicationCollections.find(query).sort({ createdAt: -1 }).toArray();
+        console.log('approveedapplications', approvedApplications)
+        res.send(approvedApplications);
 });
 
 
@@ -326,7 +333,7 @@ app.delete('/tuitions/:id', async(req, res)=>{
 })
 
 // payment related apis 
-app.post('/payment-checkout-session', async(req, res)=>{
+app.post('/payment-checkout-session',verifyFirebaseToken, async(req, res)=>{
 
     const paymentInfo = req.body;
     const trackingId = generateTrackingId();
@@ -468,7 +475,7 @@ app.post('/applications', async (req, res) => {
 
         const result = await applicationCollections.insertOne(appliedTuitions);
 const trackingId  = appliedTuitions.trackingId
-        const userEmail = appliedTuitions.email
+        const userEmail = req.decoded_email;
         logTrackings(trackingId, userEmail,'application_submitted')
        
 res.send(result)
@@ -476,12 +483,12 @@ res.send(result)
 
 });
 
-app.get('/applications',async(req, res)=>{
+app.get('/applications',verifyFirebaseToken,async(req, res)=>{
     const result = await applicationCollections.find().sort({data:-1}).toArray();
     res.send(result)
 })
 
-app.patch('/applications/update/:id', async(req, res)=>{
+app.patch('/applications/update/:id',verifyFirebaseToken, async(req, res)=>{
     const id = req.params.id;
     const updatedData = req.body;
     const query = {_id: new ObjectId(id)}
@@ -515,7 +522,7 @@ app.patch('/applications/reject/:id', verifyFirebaseToken, async (req, res) => {
 });
 
 
-app.delete('/applications/:id', async(req, res)=>{
+app.delete('/applications/:id',verifyFirebaseToken, async(req, res)=>{
     const id = req.params.id;
     const query = {_id: new ObjectId(id)}
   
@@ -673,7 +680,7 @@ app.get('/tutors', async(req, res)=>{
     const limit = 6;
     const skip = (page-1) *limit
     const total = await tutorCollections.countDocuments();
-    const result = await tutorCollections.find().skip(skip).limit(limit).toArray();
+    const result = await tutorCollections.find().sort({createdAt:-1}).skip(skip).limit(limit).toArray();
     res.send({tutors:result, page, totalPages:Math.ceil(total/limit)})
 
     }
