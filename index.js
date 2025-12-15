@@ -4,7 +4,7 @@ const app = express();
 const admin = require("firebase-admin");
 const cors = require('cors')
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
-const jwt = require('jsonwebtoken');
+// const jwt = require('jsonwebtoken');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const port = process.env.PORT || 3000;
 
@@ -21,18 +21,18 @@ app.use(express.json())
 
 const verifyFirebaseToken = async (req, res, next) => {
     const authorization = req.headers.authorization;
-    console.log('authorization is',authorization)
+ 
     if (!authorization) {
         return res.status(401).send({ message: 'Unauthorized access 1' });
     }
 
     const token = authorization.split(' ')[1];
-    console.log('token is', token);
+    
 
     try {
         const decoded = await admin.auth().verifyIdToken(token);
         req.decoded_email = decoded.email;
-        console.log('decoded email holo', req.decoded_email);
+       
         next();
     } catch (error) {
         console.error('Error verifying Firebase token:', error);
@@ -40,25 +40,29 @@ const verifyFirebaseToken = async (req, res, next) => {
     }
 };
 
-const verifyJWTToken = async (req, res, next) => {
-    const authorization = req.headers.authorization;
-    if (!authorization) {
-        return res.status(401).send({ message: 'Unauthorized access' });
-    }
 
-    const token = authorization.split(' ')[1];
-    console.log('token is', token);
 
-    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-        if (err) {
-            return res.status(401).send({ message: 'Unauthorized access' });
-        }
+// const verifyJWTToken = (req, res, next) => {
+//     const authorization = req.headers.authorization;
+    
 
-        console.log('after decoded', decoded);
-        req.decoded_email = decoded.email;
-        next();
-    });
-};
+//     if (!authorization || !authorization.startsWith('Bearer ')) {
+//         return res.status(401).send({ message: 'Unauthorized access' });
+//     }
+
+//     const token = authorization.split(' ')[1];
+    
+
+ 
+//     try {
+//            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+//         console.log('after decoded', decoded);
+//         req.decoded_email = decoded.email;
+//         next();
+//     } catch (err) {
+//         return res.status(401).send({ message: 'Unauthorized access' });
+//     }
+// };
 
 const crypto = require("crypto");
 
@@ -95,6 +99,15 @@ const usersCollections = db.collection('users')
 const paymentCollections = db.collection('payments')
 const applicationCollections = db.collection('applications')
 const trackingsCollections = db.collection('trackings')
+
+
+// jwt related apis 
+// app.post('/getToken', (req, res)=>{
+//     const loggedUser = req.body;
+//     console.log('logged User is', loggedUser)
+//     const token = jwt.sign(loggedUser, process.env.JWT_SECRET, {expiresIn:'12h'})
+//     res.send({token:token})
+// })
 
 const logTrackings = async(trackingId,userEmail, 
         status,)=>{
@@ -228,20 +241,39 @@ app.post('/tuitions',verifyFirebaseToken,async(req,res)=>{
 })
 
 app.get('/tuitions', async (req, res) => {
-    const { limit, email, subject, location } = req.query;
-
+    const { limit, email, subject, location,sortBy } = req.query;
     const query = {}; 
 
-    if (email) {
-        query.email = email; 
+    if (email){
+         query.email = email; 
+    }
+    if (subject){
+         query.subject = { $regex: subject, $options: 'i' }
+    };
+    if  (location){
+        query.location = { $regex: location, $options: 'i' };
     }
 
-    if (subject) query.subject = { $regex: subject, $options: 'i' };
-    if (location) query.location = { $regex: location, $options: 'i' };
-if(limit){
-    const perPage = limit ? parseInt(limit) : 6;
+    const perPage = parseInt(limit) || 6;
     const page = parseInt(req.query.page) || 1;
     const skip = (page - 1) * perPage;
+
+
+        let sortQuery = { createdAt: -1 };
+
+    if (sortBy === 'budget_asc'){
+         sortQuery = { budget: 1 };
+    }
+    else if (sortBy === 'budget_desc') {
+        sortQuery = { budget: -1 };
+    }
+    else if (sortBy === 'date_asc'){
+         sortQuery = { createdAt: 1 };
+    }
+    else if (sortBy === 'date_desc'){
+         sortQuery = { createdAt: -1 };
+    }
+
 
     const total = await tuitionsCollections.countDocuments(query);
     const result = await tuitionsCollections.find(query)
@@ -250,10 +282,9 @@ if(limit){
         .limit(perPage)
         .toArray();
 
-    res.send({ tuitions: result, page, totalPages: Math.ceil(total / perPage) });
-}
-
+    return res.send({ tuitions: result, page, totalPages: Math.ceil(total / perPage) });
 });
+
 app.get('/tuitions/my-tuitions', verifyFirebaseToken, async (req, res) => {
     const email = req.query.email || req.decoded_email;
     console.log('email is', email);
@@ -281,10 +312,6 @@ app.get('/tuitions/pending', async (req, res) => {
 
     res.send({ tuitions: result, page, totalPages: Math.ceil(total / perPage) });
 });
-
-
-
-
 
 app.get('/tuitions/:id', async(req, res)=>{
     const id = req.params.id;
@@ -340,7 +367,7 @@ app.get('/approvedApplications/approved',verifyFirebaseToken,verifyTutor, async 
   const query = { status: 'approved',email:req.decoded_email}
 
         const approvedApplications = await applicationCollections.find(query).sort({ createdAt: -1 }).toArray();
-        console.log('approveedapplications', approvedApplications)
+        
         res.send(approvedApplications);
 });
 
@@ -465,7 +492,7 @@ const userEmail = session.customer_email
 logTrackings(trackingId,userEmail, 'payment_success')
 
 
- res.send({
+return res.send({
     success:true, 
     tuitionUpdateResult,
     paymentResult ,
@@ -497,6 +524,7 @@ app.post('/applications', async (req, res) => {
     
         const appliedTuitions = req.body;
         appliedTuitions.status = 'pending';
+        appliedTuitions.verifyStatus = 'not verified'
         appliedTuitions.date = new Date();
 
         
@@ -521,9 +549,30 @@ res.send(result)
 });
 
 app.get('/applications',verifyFirebaseToken,async(req, res)=>{
-    const result = await applicationCollections.find().sort({data:-1}).toArray();
+    
+    const email = req.query.email;
+    const query = {}
+    if(email){
+        query.email = email;
+    }
+   
+    const result = await applicationCollections.find(query).sort({date:-1}).toArray();
     res.send(result)
 })
+
+app.get('/applications/verified', verifyFirebaseToken,async(req,res)=>{
+   
+   
+    const query={
+     
+        verifyStatus:'verified'
+    }
+    
+    const verifiedTutors = await applicationCollections.find(query).sort({date:-1}).toArray()
+    console.log('verifiedTutors', verifiedTutors)
+    res.send(verifiedTutors)
+})
+
 
 app.patch('/applications/update/:id',verifyFirebaseToken, async(req, res)=>{
     const id = req.params.id;
@@ -603,6 +652,46 @@ const updateReview = {
 });
 
 // admin summery 
+
+app.patch('/applications/verify/:id', verifyFirebaseToken, verifyAdmin, async(req, res)=>{
+    const id = req.params.id;
+    const query = {_id:new ObjectId(id)}
+    const updateApplicationDoc = {
+        $set:{
+            verifyStatus:'verified',
+            verifiedAt: new Date(),
+            verifiedBy:req.decoded_email,
+        }
+    }
+    const result = await applicationCollections.updateOne(query, updateApplicationDoc)
+    res.send(result)
+})
+
+app.patch('/applications/reject/byAdmin/:id',
+  verifyFirebaseToken,
+  verifyAdmin,
+  async (req, res) => {
+    const id = req.params.id;
+    const { reason } = req.body;
+
+    const updateDoc = {
+      $set: {
+        status: 'rejected',
+        verifyStatus: 'not verified',
+        rejectReason: reason || 'Not specified',
+        rejectedAt: new Date()
+      }
+    };
+
+    const result = await applicationCollections.updateOne(
+      { _id: new ObjectId(id) },
+      updateDoc
+    );
+
+    res.send(result);
+  }
+);
+
 
 app.get('/admin/report-summary', verifyFirebaseToken,verifyAdmin, async (req, res) => {
     const pipeline = [
