@@ -8,8 +8,10 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const port = process.env.PORT || 3000;
 
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf8')
+const serviceAccount = JSON.parse(decoded);
 
-const serviceAccount = require("./e-tuition-bd-firebase-adminsdk.json");
+
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
@@ -18,6 +20,30 @@ admin.initializeApp({
 
 app.use(cors());
 app.use(express.json())
+
+
+const crypto = require("crypto");
+
+const generateTrackingId = () => {
+  const prefix = "TRK"; 
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, ""); 
+  const random = crypto.randomBytes(3).toString("hex").toUpperCase(); 
+  return `${prefix}-${date}-${random}`;
+};
+
+
+
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.sc7dsau.mongodb.net/?appName=Cluster0`;
+
+
+const client = new MongoClient(uri, {
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  }
+});
+
 
 const verifyFirebaseToken = async (req, res, next) => {
     const authorization = req.headers.authorization;
@@ -35,7 +61,7 @@ const verifyFirebaseToken = async (req, res, next) => {
        
         next();
     } catch (error) {
-        console.error('Error verifying Firebase token:', error);
+        
         return res.status(401).send({ message: 'Unauthorized access 2' });
     }
 };
@@ -64,32 +90,12 @@ const verifyFirebaseToken = async (req, res, next) => {
 //     }
 // };
 
-const crypto = require("crypto");
 
-const generateTrackingId = () => {
-  const prefix = "TRK"; 
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, ""); 
-  const random = crypto.randomBytes(3).toString("hex").toUpperCase(); 
-  return `${prefix}-${date}-${random}`;
-};
-
-
-
-const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.sc7dsau.mongodb.net/?appName=Cluster0`;
-
-
-const client = new MongoClient(uri, {
-  serverApi: {
-    version: ServerApiVersion.v1,
-    strict: true,
-    deprecationErrors: true,
-  }
-});
 
 async function run(){
 try{
 
-await client.connect();
+// await client.connect();
 
 
 const db = client.db('tuitions-db'); 
@@ -184,7 +190,7 @@ app.post('/users',async(req, res)=>{
 })
 
 app.get('/users', verifyFirebaseToken, async(req, res)=>{
-    const result =await usersCollections.find().toArray();
+    const result =await usersCollections.find().sort({createdAt:-1}).toArray();
     res.send(result)
 })
 
@@ -199,7 +205,7 @@ res.send({name:user?.displayName,role:user?.role, email:user?.email, phoneNumber
 app.patch('/users/update/:email', async (req, res) => {
   const email = req.params.email;
   const updatedData = req.body;
-console.log('email r updateddaata', email, updatedData)
+
  if (!email) {
     return res.status(403).send({ message: "Forbidden" });
 }
@@ -287,12 +293,11 @@ app.get('/tuitions', async (req, res) => {
 
 app.get('/tuitions/my-tuitions', verifyFirebaseToken, async (req, res) => {
     const email = req.query.email || req.decoded_email;
-    console.log('email is', email);
+    
 
     const query = { userEmail: email };
     const result = await tuitionsCollections.find(query).sort({ createdAt: -1 }).toArray();
 
-    console.log('result is', result);
     res.send({ tuitions: result });
 });
 
@@ -315,7 +320,6 @@ app.get('/tuitions/pending', async (req, res) => {
 
 app.get('/tuitions/:id', async(req, res)=>{
     const id = req.params.id;
-console.log('id of tuition', id)
     const query = {_id: new ObjectId(id)}
     const result = await tuitionsCollections.findOne(query)
     res.send(result)
@@ -402,8 +406,6 @@ app.post('/payment-checkout-session',verifyFirebaseToken, async(req, res)=>{
     const paymentInfo = req.body;
     const trackingId = generateTrackingId();
     const amount = parseInt(paymentInfo.budget) *100
-    console.log('amount is', amount, paymentInfo.budget)
-    console.log('paymentInfo', paymentInfo)
      const session = await stripe.checkout.sessions.create({
     line_items: [
       {
@@ -436,10 +438,8 @@ app.patch('/payment-success', verifyFirebaseToken,async (req, res)=>{
     const sessionId  = req.query.session_id;
 
     const session = await stripe.checkout.sessions.retrieve(sessionId)
-    console.log('Stripe metadata tuitionId:', session.metadata.tuitionId)
 const trackingId=session.metadata.trackingId
     const transactionId = session.payment_intent
-    console.log('transactionId', transactionId)
     const query = {transactionId:transactionId}
     const existedPayment = await paymentCollections.findOne(query)
 
@@ -450,7 +450,6 @@ const trackingId=session.metadata.trackingId
     if(session.payment_status === 'paid'){
         const tuitionId = session.metadata.tuitionId
         const applicationId = session.metadata.applicationId
-        console.log('applicationId', applicationId)
         const query = {id:new ObjectId(tuitionId)}
 
         const update = {
@@ -510,7 +509,6 @@ return res.send({success:false})
 
 app.get('/payments',verifyFirebaseToken,async (req, res)=>{
 
-    console.log('decoded',req.decoded_email)
     const email = req.decoded_email;
     const query = {email:email}
 const result = await paymentCollections.find(query).sort({paidAt:-1}).toArray();
@@ -561,15 +559,11 @@ app.get('/applications',verifyFirebaseToken,async(req, res)=>{
 })
 
 app.get('/applications/verified', verifyFirebaseToken,async(req,res)=>{
-   
-   
     const query={
-     
         verifyStatus:'verified'
     }
     
     const verifiedTutors = await applicationCollections.find(query).sort({date:-1}).toArray()
-    console.log('verifiedTutors', verifiedTutors)
     res.send(verifiedTutors)
 })
 
@@ -820,7 +814,7 @@ app.get('/tutors', async(req, res)=>{
 })
 
 
-await client.db('admin').command({ping:1})
+// await client.db('admin').command({ping:1})
 console.log("Pinged your deployment. You successfully connected to MongoDB!");
 
 
