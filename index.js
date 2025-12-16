@@ -95,7 +95,7 @@ const verifyFirebaseToken = async (req, res, next) => {
 async function run(){
 try{
 
-// await client.connect();
+await client.connect();
 
 
 const db = client.db('tuitions-db'); 
@@ -239,6 +239,7 @@ app.post('/tuitions',verifyFirebaseToken,async(req,res)=>{
     tuitions.trackingId = trackingId;
     tuitions.paymentStatus='Unpaid'
     tuitions.status= 'pending'
+    tuitions.classStatus='not_started'
     tuitions.userEmail=userEmail
     tuitions.createdAt= new Date();
     const result = await tuitionsCollections.insertOne(tuitions)
@@ -334,6 +335,7 @@ const userEmail =req.decoded_email
     const updateDoc = {
         $set: {
             status: "approved",
+            classStatus:'',
             trackingId,
             updatedBy:userEmail,
             updatedAt: new Date()
@@ -345,6 +347,34 @@ const userEmail =req.decoded_email
     logTrackings(trackingId,userEmail,'tuition_approved')
     res.send(result);
 });
+
+// Tuition Mark as Completed
+app.patch('/tuitions/complete/:id', verifyFirebaseToken, async (req, res) => {
+  
+    const tuitionId = req.params.id;
+    console.log('tuiton id is', tuitionId)
+    const email = req.decoded_email;
+
+    const query = { _id: new ObjectId(tuitionId) };
+    const tuition = await tuitionsCollections.findOne(query);
+    const updateDoc = {
+      $set: {
+        classStatus: 'completed',
+        updatedAt: new Date(),
+      }
+    };
+    const result = await tuitionsCollections.updateOne(query, updateDoc);
+ const applicationQuery = { tuitionPostId: tuitionId };
+    const updateApplications = {
+      $set: { tuitionPostClassStatus: 'completed', updatedAt: new Date() }
+    };
+    const applicationsResult = await applicationCollections.updateMany(applicationQuery, updateApplications);
+   
+    logTrackings(tuition.trackingId, email, 'class_completed');
+   
+    res.send({ result, applicationsResult });
+});
+
 
 app.patch('/tuitions/reject/:id', verifyFirebaseToken, async (req, res) => {
     const id = req.params.id;
@@ -450,7 +480,7 @@ const trackingId=session.metadata.trackingId
     if(session.payment_status === 'paid'){
         const tuitionId = session.metadata.tuitionId
         const applicationId = session.metadata.applicationId
-        const query = {id:new ObjectId(tuitionId)}
+        const query = {_id:new ObjectId(tuitionId)}
 
         const update = {
             $set:{
@@ -481,7 +511,8 @@ if(applicationId){
     const applicationQuery = {_id: new ObjectId(applicationId)}
 const updateApplication = {
     $set:{
-        status:'approved'
+        status:'approved',
+        tuitionPostClassStatus: 'on_going'
     }
 }
     applicationResult = await applicationCollections.updateOne(applicationQuery, updateApplication)
@@ -814,7 +845,7 @@ app.get('/tutors', async(req, res)=>{
 })
 
 
-// await client.db('admin').command({ping:1})
+await client.db('admin').command({ping:1})
 console.log("Pinged your deployment. You successfully connected to MongoDB!");
 
 
