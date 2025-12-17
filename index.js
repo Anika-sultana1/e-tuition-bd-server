@@ -196,6 +196,14 @@ console.log('applications result', applicationsResult)
     res.send({ success: true, result, applicationsResult });
 });
 
+app.get('/reviews/:tutorEmail', verifyFirebaseToken,verifyTutor,async (req, res) => {
+  const result = await reviewCollections
+    .find({ tutorEmail: req.params.tutorEmail })
+    .sort({ createdAt: -1 })
+    .toArray();
+
+  res.send(result);
+});
 
 
 // tracking related apis 
@@ -871,7 +879,7 @@ app.get('/admin/monthly-revenue', verifyFirebaseToken,verifyAdmin, async (req, r
 
 
 // tutor related apis 
-app.get('/tutors', async(req, res)=>{
+app.get('/tutorsApplications', async(req, res)=>{
     
     const {limit} = req.query;
     if(!limit){
@@ -879,8 +887,8 @@ app.get('/tutors', async(req, res)=>{
             const page = parseInt(req.query.page) || 1;
     const limit = 6;
     const skip = (page-1) *limit
-    const total = await tutorCollections.countDocuments();
-    const result = await tutorCollections.find().sort({createdAt:-1}).skip(skip).limit(limit).toArray();
+    const total = await applicationCollections.countDocuments();
+    const result = await applicationCollections.find().sort({createdAt:-1}).skip(skip).limit(limit).toArray();
     res.send({tutors:result, page, totalPages:Math.ceil(total/limit)})
 
     }
@@ -888,7 +896,7 @@ app.get('/tutors', async(req, res)=>{
 
 
 
-    const cursor = tutorCollections.find().sort({rating:-1}).limit(8);
+    const cursor = applicationCollections.find().sort({date:-1}).limit(8);
     const result = await cursor.toArray()
     res.send(result)
 })
