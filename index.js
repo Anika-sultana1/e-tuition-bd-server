@@ -105,6 +105,7 @@ const usersCollections = db.collection('users')
 const paymentCollections = db.collection('payments')
 const applicationCollections = db.collection('applications')
 const trackingsCollections = db.collection('trackings')
+const reviewCollections = db.collection('reviews')
 
 
 // jwt related apis 
@@ -148,6 +149,54 @@ const verifyTutor = async(req, res, next)=>{
 
     next()
 }
+
+// review related apis 
+// Review related API
+app.post("/reviews", verifyFirebaseToken, async (req, res) => {
+    const review = req.body;
+    review.createdAt = new Date();
+
+    if (!review.tuitionPostId || !review.tutorEmail || !review.studentEmail) {
+        return res.status(400).send({ success: false, message: 'Missing required review data.' });
+    }
+
+    const existingReview = await reviewCollections.findOne({
+        tuitionPostId: review.tuitionPostId,
+        tutorEmail: review.tutorEmail,
+        studentEmail: review.studentEmail,
+    });
+
+    if (existingReview) {
+        return res.status(409).send({ success: false, message: 'This class has already been reviewed.' });
+    }
+
+    review.rating = Number(review.rating);
+    review.reviewText = review.reviewText || "";
+    const result = await reviewCollections.insertOne(review);
+
+    const applicationQuery = {
+        tuitionPostId: review.tuitionPostId,
+    };
+    const updateApplication = {
+        $set: {
+            reviewed: true,
+            reviewText: review.reviewText,
+            rating: review.rating,
+            updatedAt: new Date()
+        }
+    };
+    const applicationsResult = await applicationCollections.updateOne(applicationQuery, updateApplication);
+console.log('applications result', applicationsResult)
+    const tuitionQuery = {_id: new ObjectId(review.tuitionPostId)}
+    const tuition = await tuitionsCollections.findOne(tuitionQuery);
+    if (tuition) {
+        logTrackings(tuition.trackingId, review.studentEmail, 'review_submitted');
+    }
+
+    res.send({ success: true, result, applicationsResult });
+});
+
+
 
 // tracking related apis 
 app.get('/trackings/student', verifyFirebaseToken, async(req, res)=>{
