@@ -95,17 +95,18 @@ const verifyFirebaseToken = async (req, res, next) => {
 async function run(){
 try{
 
-await client.connect();
+// await client.connect();
 
 
 const db = client.db('tuitions-db'); 
 const tuitionsCollections = db.collection('tuitions'); 
-const tutorCollections = db.collection('tutors')
+
 const usersCollections = db.collection('users')
 const paymentCollections = db.collection('payments')
 const applicationCollections = db.collection('applications')
 const trackingsCollections = db.collection('trackings')
 const reviewCollections = db.collection('reviews')
+const messageCollections = db.collection('messages')
 
 
 // jwt related apis 
@@ -151,7 +152,6 @@ const verifyTutor = async(req, res, next)=>{
 }
 
 // review related apis 
-// Review related API
 app.post("/reviews", verifyFirebaseToken, async (req, res) => {
     const review = req.body;
     review.createdAt = new Date();
@@ -186,7 +186,7 @@ app.post("/reviews", verifyFirebaseToken, async (req, res) => {
         }
     };
     const applicationsResult = await applicationCollections.updateOne(applicationQuery, updateApplication);
-console.log('applications result', applicationsResult)
+
     const tuitionQuery = {_id: new ObjectId(review.tuitionPostId)}
     const tuition = await tuitionsCollections.findOne(tuitionQuery);
     if (tuition) {
@@ -392,7 +392,6 @@ const userEmail =req.decoded_email
     const updateDoc = {
         $set: {
             status: "approved",
-            classStatus:'',
             trackingId,
             updatedBy:userEmail,
             updatedAt: new Date()
@@ -409,7 +408,6 @@ const userEmail =req.decoded_email
 app.patch('/tuitions/complete/:id', verifyFirebaseToken, async (req, res) => {
   
     const tuitionId = req.params.id;
-    console.log('tuiton id is', tuitionId)
     const email = req.decoded_email;
 
     const query = { _id: new ObjectId(tuitionId) };
@@ -457,7 +455,7 @@ app.get('/approvedApplications/approved',verifyFirebaseToken,verifyTutor, async 
 
   const query = { status: 'approved',email:req.decoded_email}
 
-        const approvedApplications = await applicationCollections.find(query).sort({ createdAt: -1 }).toArray();
+        const approvedApplications = await applicationCollections.find(query).sort({ date: -1 }).toArray();
         
         res.send(approvedApplications);
 });
@@ -512,7 +510,7 @@ app.post('/payment-checkout-session',verifyFirebaseToken, async(req, res)=>{
          trackingId: trackingId,
         applicationId: paymentInfo.applicationId,
     },
-    customer_email:paymentInfo.email,
+    customer_email:req.decoded_email,
     success_url: `${process.env.MY_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${process.env.MY_DOMAIN}/dashboard/payment-cancelled`,
   });
@@ -549,7 +547,7 @@ const trackingId=session.metadata.trackingId
  
    const payment = {
    studentName: session.metadata.studentName,
-   email: session.customer_email,
+   email:session.customer_email,
    amount: session.amount_total / 100,
    currency: session.currency,
    tuitionId: session.metadata.tuitionId,
@@ -647,8 +645,10 @@ app.get('/applications',verifyFirebaseToken,async(req, res)=>{
 })
 
 app.get('/applications/verified', verifyFirebaseToken,async(req,res)=>{
+    const studentEmail = req.decoded_email;
     const query={
-        verifyStatus:'verified'
+        verifyStatus:'verified',
+        tuitionPostEmail:studentEmail
     }
     
     const verifiedTutors = await applicationCollections.find(query).sort({date:-1}).toArray()
@@ -877,6 +877,46 @@ app.get('/admin/monthly-revenue', verifyFirebaseToken,verifyAdmin, async (req, r
     res.send(result);
 });
 
+app.post('/messages', verifyFirebaseToken, async (req, res)=>{
+
+  const {toEmail, message} = req.body;
+  const fromEmail = req.decoded_email;
+
+  if(!toEmail || !message) {
+    return res.status(400).send({message:'All fields required'});
+  }
+
+  const msgDoc = { fromEmail,
+     toEmail,
+      message,
+       createdAt: new Date(),
+     };
+  const result = await messageCollections.insertOne(msgDoc);
+  res.send({success:true, result});
+});
+
+
+// get messages between student & tutor
+app.get('/messages', verifyFirebaseToken, async (req,res)=>{
+  const userEmail = req.decoded_email;
+  const withEmail = req.query.with; 
+
+  if(!withEmail) {
+    return res.status(400).send({message:'Provide with email'});
+  }
+
+  const messages = await messageCollections.find({
+    $or:[
+      {fromEmail: userEmail, toEmail: withEmail},
+      {fromEmail: withEmail, toEmail: userEmail}
+    ]
+  }).sort({createdAt:1}).toArray();
+
+  res.send(messages);
+});
+
+
+
 
 // tutor related apis 
 app.get('/tutorsApplications', async(req, res)=>{
@@ -902,8 +942,8 @@ app.get('/tutorsApplications', async(req, res)=>{
 })
 
 
-await client.db('admin').command({ping:1})
-console.log("Pinged your deployment. You successfully connected to MongoDB!");
+// await client.db('admin').command({ping:1})
+// console.log("Pinged your deployment. You successfully connected to MongoDB!");
 
 
 }
