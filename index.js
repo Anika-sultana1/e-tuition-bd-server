@@ -647,7 +647,8 @@ app.get('/applications',verifyFirebaseToken,async(req, res)=>{
 app.get('/applications/verified', verifyFirebaseToken,async(req,res)=>{
     const studentEmail = req.decoded_email;
     const query={
-        verifyStatus:'verified',
+        
+verifyStatus:'verified',
         tuitionPostEmail:studentEmail
     }
     
