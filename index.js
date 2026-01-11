@@ -287,6 +287,20 @@ app.delete('/users/delete/:email', verifyFirebaseToken,async(req, res)=>{
 })
 
 
+app.get('/stats', async (req, res) => {
+    const totalStudents = await usersCollections.countDocuments({ role: 'student' });
+    const totalTutors = await usersCollections.countDocuments({ role: 'tutor' });
+    const completedTuitions = await tuitionsCollections.countDocuments({ classStatus: 'completed' });
+    
+
+    res.send({
+        totalStudents,
+        totalTutors,
+        completedTuitions,
+        successRate: 99 
+    });
+});
+
 
 // tuition related apis 
 app.post('/tuitions',verifyFirebaseToken,async(req,res)=>{
@@ -318,7 +332,7 @@ app.get('/tuitions', async (req, res) => {
         query.location = { $regex: location, $options: 'i' };
     }
 
-    const perPage = parseInt(limit) || 6;
+    const perPage = parseInt(limit) || 8;
     const page = parseInt(req.query.page) || 1;
     const skip = (page - 1) * perPage;
 
