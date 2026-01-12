@@ -934,27 +934,29 @@ app.get('/messages', verifyFirebaseToken, async (req,res)=>{
 
 
 // tutor related apis 
-app.get('/tutorsApplications', async(req, res)=>{
-    
-    const {limit} = req.query;
-    if(!limit){
+app.get('/tutorsApplications', async (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 8; 
+  const skip = (page - 1) * limit;
 
-            const page = parseInt(req.query.page) || 1;
-    const limit = 6;
-    const skip = (page-1) *limit
-    const total = await applicationCollections.countDocuments();
-    const result = await applicationCollections.find().sort({createdAt:-1}).skip(skip).limit(limit).toArray();
-    res.send({tutors:result, page, totalPages:Math.ceil(total/limit)})
+  const query = {}; 
 
-    }
+  const total = await applicationCollections.countDocuments(query);
 
+  const tutors = await applicationCollections
+    .find(query)
+    .sort({ date: -1 })
+    .skip(skip)
+    .limit(limit)
+    .toArray();
 
+  res.send({
+    tutors,
+    page,
+    totalPages: Math.ceil(total / limit),
+  });
+});
 
-
-    const cursor = applicationCollections.find().sort({date:-1}).limit(8);
-    const result = await cursor.toArray()
-    res.send(result)
-})
 
 
 // await client.db('admin').command({ping:1})
